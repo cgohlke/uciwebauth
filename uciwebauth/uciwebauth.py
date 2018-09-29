@@ -32,22 +32,35 @@
 
 """Access UCI WebAuth, LDAP person records, and Active Directory user objects.
 
+Uciwebauth is a library to access identity management and authentication
+services at the University of California, Irvine (UCI):
+
+1. WebAuth provides a secure, single sign-on authentication solution tool
+   for web applications.
+2. LDAP (Lightweight Directory Access Protocol) provides information from
+   the Campus Directory.
+3. ADSI (Active Directory Service Interfaces) enables managing user objects
+   in a Microsoft AD.
+
 :Author:
   `Christoph Gohlke <https://www.lfd.uci.edu/~gohlke/>`_
 
 :Organization:
   Laboratory for Fluorescence Dynamics. University of California, Irvine
 
-:Version: 2018.8.30
+:Version: 2018.9.28
 
 Requirements
 ------------
 * `CPython 3.5+ <https://www.python.org>`_
 * `Python-ldap 3.1 <https://www.python-ldap.org>`_
-* `Pywin32 223 <https://github.com/mhammond/pywin32>`_
+* `Pywin32 224 <https://github.com/mhammond/pywin32>`_
 
 Revisions
 ---------
+2018.9.28
+    Add option to authenticate with OIT LDAP service.
+    Use OIT instead of Campus LDAP service.
 2018.8.30
     Move uciwebauth.py module into uciwebauth package.
 2018.5.25
@@ -59,17 +72,20 @@ Revisions
 
 References
 ----------
-(1) OIT WebAuth: A tool for validating UCInetIDs on the Web.
-    https://www.oit.uci.edu/idm/webauth/
-(2) UCI LDAP Directory Service. https://www.oit.uci.edu/idm/ldap/
+1. OIT WebAuth: A tool for validating UCInetIDs on the Web.
+   https://www.oit.uci.edu/idm/webauth/
+2. UCI LDAP Directory Service. https://www.oit.uci.edu/idm/ldap/
+3. Active Directory Service Interfaces.
+   https://docs.microsoft.com/en-us/windows/desktop/adsi/
 
 """
 
 from __future__ import division, print_function
 
-__version__ = '2018.8.30'
+__version__ = '2018.9.28'
 __docformat__ = 'restructuredtext en'
-__all__ = 'WebAuth', 'WebAuthError', 'LdapPerson', 'LdapPersonError'
+__all__ = ('WebAuth', 'WebAuthError', 'LdapPerson', 'LdapPersonError',
+           'AdsiUser', 'AdsiUserError', 'WebAuthBackend')
 
 
 import sys
@@ -80,7 +96,7 @@ from urllib.parse import urlencode, urlunsplit
 from urllib.request import Request, urlopen
 
 
-class WebAuth(object):
+class WebAuth():
     """Authenticate against UCI WebAuth service.
 
     Raise WebAuthError if authentication fails.
@@ -244,7 +260,7 @@ class WebAuth(object):
     def _clear(self):
         """Initialize attributes to None."""
         self.ucinetid_auth = None
-        for attr in self.ATTRS.keys():
+        for attr in self.ATTRS:
             setattr(self, attr, None)
 
     def _search_token(self, search_string):
@@ -286,7 +302,7 @@ class WebAuth(object):
     def __str__(self):
         """Return string with information about authenticated UCInetId."""
         output = ['ucinetid_auth=%s' % self.ucinetid_auth]
-        for attr in self.ATTRS.keys():
+        for attr in self.ATTRS:
             value = getattr(self, attr)
             if value is not None:
                 output.append('%s=%s' % (attr, value))
@@ -298,7 +314,7 @@ class WebAuthError(Exception):
     pass
 
 
-class LdapPerson(object):
+class LdapPerson():
     """A person entry in the UCI LDAP directory.
 
     Raise LdapPersonError if search fails or results are ambiguous
@@ -306,63 +322,92 @@ class LdapPerson(object):
 
     The first item of any LDAP record field listed in ATTRS is stored
     as an attribute.
-    The complete LDAP search results are stored as 'records'.
+    The complete LDAP search results are stored as 'records' attribute.
 
     Examples
     --------
     >>> try:
-    ...     p1 = LdapPerson(TEST_USER)
+    ...     p = LdapPerson(TEST_USER)
     ... except LdapPersonError:
     ...     print('LdapPerson failed')
     ... else:
-    ...     p2 = LdapPerson(p1.campusId)
-    ...     p3 = LdapPerson('*%s %s*' % (p1.givenName, p1.sn), 'cn')
-    ...     (p1.cn == p2.cn) and (p1.mail == p3.mail)
+    ...     p2 = LdapPerson(p.uciCampusID)
+    ...     p3 = LdapPerson('*%s %s*' % (p.givenName, p.middleName), 'cn')
+    ...     (p.cn == p2.cn) and (p.mail == p3.mail)
     True
 
     """
-    SERVER = 'ldap://ldap.service.uci.edu'
-    BASEDN = ('ou=University of California Irvine,'
-              'o=University of California,c=US')
-    TYPES = (b'eduPerson', b'PERSON', b'STUDENT')
-    ATTRS = ('cn', 'uid', 'campusId', 'ucinetid', 'UCIaffiliation',
-             'lastFirstName', 'givenName', 'sn', 'mail', 'telephoneNumber',
-             'homePageUrl', 'department', 'postalAddress', 'postalCode',
-             'mailcode', 'type', 'AlumniDate', 'AlumniEmail'
-             'major', 'studentLevel', 'displayName', 'rewrite',
-             'mailDeliveryPoint', 'objectClass', 'pretty_name')
+    SERVER = 'ldaps://ldap.oit.uci.edu:636'  # 'ldap://ldap.oit.uci.edu:389'
+    BASEDN = 'ou=people,dc=uci,dc=edu'
+    TYPES = b'uciPerson', b'eduPerson', b'PERSON', b'STUDENT'
+    ATTRS = (
+        'appointmentType', 'cn', 'createTimestamp', 'dn', 'department',
+        'departmentNumber', 'displayName', 'eduPersonAffiliation',
+        'eduPersonPrincipalName', 'eduPersonPrincipalNamePrior',
+        'eduPersonOrgDN', 'eduPersonScopedAffiliation', 'employeeNumber',
+        'facsimileTelephoneNumber', 'givenName', 'l', 'mail', 'major',
+        'memberOf', 'middleName', 'modifyTimestamp', 'myDotName', 'o',
+        'objectClass', 'ou', 'postalAddress', 'postalCode', 'sn', 'st',
+        'telephoneNumber', 'title', 'uciAdminAppCSS', 'uciAffiliation',
+        'uciApplicantEmail', 'uciCampusID', 'uciCTOCode', 'uciEmployeeClass',
+        'uciEmployeeClassDescription', 'uciEmployeeGivenName',
+        'uciEmployeeMiddleName', 'uciEmployeeSN', 'uciEmployeeStatus',
+        'uciEmployeeStatusCode', 'uciFloater', 'uciGuestExpiration',
+        'uciHomeDepartment', 'uciHomeDepartmentCode',
+        'uciHomeDepartmentCodeTitle', 'uciHrStatus', 'uciKFSCampusCode',
+        'uciKFSChart', 'uciKFSChartOrgCode', 'uciKFSChartOrgName',
+        'uciKFSOrgCode', 'uciMailDeliveryPoint', 'ucinetidLocked',
+        'ucinetidLockedAt', 'ucinetidPasswordChangeAt', 'ucinetidReset',
+        'ucinetidResetAt', 'uciPrimaryCTOCode', 'uciPrimaryEmployeeClass',
+        'uciPrimaryEmployeeClassDescription', 'uciPrimaryTitle',
+        'uciPrimaryTitleCode', 'uciPublishFlag', 'uciRecentlyHired',
+        'uciReleaseFlag', 'uciSNAPTemplate', 'uciSponsorDepartment',
+        'uciSponsorDepartmentCode', 'uciSponsorID', 'uciStudentEmailRelease',
+        'uciStudentGivenName', 'uciStudentID', 'uciStudentLevel',
+        'uciStudentMiddleName', 'uciStudentSN', 'uciSupervisorDN',
+        'uciSupervisorRoleFlag', 'uciTestAccount', 'uciUCNetID', 'uciVPNFlag',
+        'uciWebMailAddress', 'uciZotCode', 'uciZotCodeName', 'uid')
 
-    def __init__(self, value=None, rdn=None, types=TYPES):
-        if value:
-            self.search(value, rdn, types)
-        else:
-            self._clear()
+    def __init__(self, query, rdn=None, uid=None, pwd=None, verifyssl=False,
+                 server=SERVER, basedn=BASEDN, attributes=ATTRS, types=TYPES):
+        """Search LDAP directory for query and set attributes from results.
 
-    def search(self, value, rdn=None, types=None):
-        """Search LDAP directory for value and set attributes from results.
-
-        Value is searched in campusId (if string), ucinetid (if int),
-        or relative distinguished name (if specified).
+        Query is searched in 'uid' (if string), 'uciCampusID' (if int),
+        or the relative distinguished name 'rdn' if specified.
 
         Raise LdapPersonError on failure.
 
         """
         import ldap  # noqa: delayed import
 
-        self._clear()
-        if rdn:
-            query = '%s=%s' % (rdn, value)
+        if not verifyssl:
+            ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+
+        if not query:
+            raise ValueError('empty query')
+        if query[0] == '(' and query[-1] == ')':
+            pass
+        elif rdn:
+            query = '(%s=%s)' % (rdn, query)
         else:
             try:
-                query = 'campusId=%.12i' % int(value)
+                query = '(uciCampusID=%.12i)' % int(query)
             except Exception:
-                query = 'ucinetid=%s' % str(value)
+                query = '(uid=%s)' % query
+
+        if uid and pwd and server == self.SERVER:
+            server = server.replace('ldap.', 'ldap-auth.')
+
         try:
-            ldapobj = ldap.initialize(self.SERVER)
+            ldapobj = ldap.initialize(server)
         except ldap.LDAPError as e:
             raise LdapPersonError(e)
+
+        if uid and pwd:
+            ldapobj.simple_bind_s('uid=%s,%s' % (uid, basedn), pwd)
+
         try:
-            id_ = ldapobj.search(self.BASEDN, ldap.SCOPE_SUBTREE, query, None)
+            id_ = ldapobj.search(basedn, ldap.SCOPE_SUBTREE, query, None)
             results = []
             while 1:
                 ltype, data = ldapobj.result(id_, 0)
@@ -372,22 +417,28 @@ class LdapPerson(object):
                     results.append(data)
         except ldap.LDAPError as e:
             raise LdapPersonError(e)
+
         if len(results) != 1:
             raise LdapPersonError('%s not found or result ambiguous.' % query)
-        self.DN, self.records = results[0][0]
+
+        self.dn, self.records = results[0][0]
         if not self._is_type(types):
             raise LdapPersonError('%s has wrong type.' % query)
-        for attr in self.ATTRS:
+
+        for attr in attributes:
             if attr in self.records:
                 value = self.records[attr][0].decode('utf8')
                 setattr(self, attr, value)
+            else:
+                setattr(self, attr, None)
+
         try:
             self.pretty_name = ' '.join((self.givenName.split()[0].title(),
                                          self.sn.title()))
         except Exception:
             self.pretty_name = None
 
-    def _is_type(self, types=TYPES):
+    def _is_type(self, types):
         """Return whether record is one of types."""
         if not types:
             return True
@@ -398,18 +449,10 @@ class LdapPerson(object):
                         return True
         return False
 
-    def _clear(self):
-        """Initialize attributes to None."""
-        self.records = None
-        for attr in self.ATTRS:
-            setattr(self, attr, None)
-
     def __str__(self):
         """Return string with information about person."""
-        output = []
-        for attr in self.ATTRS:
-            output.append('%s=%s' % (attr, getattr(self, attr)))
-        return '\n'.join(output)
+        return '\n'.join('%s=%s' % (attr, getattr(self, attr))
+                         for attr in self.ATTRS if getattr(self, attr))
 
 
 class LdapPersonError(Exception):
@@ -417,12 +460,12 @@ class LdapPersonError(Exception):
     pass
 
 
-class AdsiUser(object):
+class AdsiUser():
     """Active Directory Service Interfaces User Account.
 
     Examples
     --------
-    >>> user = AdsiUser('userid', username='username, password='password',
+    >>> user = AdsiUser('userid', username='username', password='password',
     ...     dnname='LDAP://myserver/ou=Users,ou=myou,dc=mydomain,dc=com')
     >>> user.enable()
     >>> user.unlock()
@@ -486,11 +529,13 @@ class AdsiUser(object):
 
     @property
     def must_change_password(self):
+        """Return if user must change password at next logon."""
         return (self.user.pwdLastSet.lowpart +
                 self.user.pwdLastSet.highpart == 0)
 
     @property
     def is_disabled(self):
+        """Return if user account is disabled."""
         return self.user.AccountDisabled
 
     def __str__(self):
@@ -506,7 +551,7 @@ class AdsiUserError(Exception):
     pass
 
 
-class WebAuthBackend(object):
+class WebAuthBackend():
     """UCI WebAuth backend for use in web apps.
 
     Attributes
@@ -710,7 +755,10 @@ def main():
         import doctest
         globs = {'TEST_USER': sys.argv[1],  # Enter a UCInetId for testing
                  'TEST_PASSWORD': sys.argv[2]}  # Enter a password for testing
-        print(LdapPerson(globs['TEST_USER']))
+        print(LdapPerson(globs['TEST_USER'],
+                         # uid=globs['TEST_USER'],
+                         # password=globs['TEST_PASSWORD']
+                         ))
         doctest.testmod(verbose=False, extraglobs=globs)
     else:
         import webbrowser
