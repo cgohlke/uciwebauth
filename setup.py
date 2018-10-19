@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # uciwebauth/setup.py
 
+"""Uciwebauth package setuptools script."""
+
 import sys
 import re
 
@@ -10,8 +12,8 @@ with open('uciwebauth/uciwebauth.py') as fh:
     code = fh.read()
 
 version = re.search(r"__version__ = '(.*?)'", code).groups()[0]
-description = re.search(r'"""(.*)\.\n', code).groups()[0]
-readme = re.search(r'[\r\n?|\n]{2}"""(.*)"""[\r\n?|\n]{2}from', code,
+description = re.search(r'"""(.*)\.[\r\n?|\n]', code).groups()[0]
+readme = re.search(r'[\r\n?|\n]{2}"""(.*)"""[\r\n?|\n]{2}__version__', code,
                    re.MULTILINE | re.DOTALL).groups()[0]
 license = re.search(r'(# Copyright.*?[\r\n?|\n])[\r\n?|\n]+""', code,
                     re.MULTILINE | re.DOTALL).groups()[0]
@@ -40,7 +42,7 @@ setup(
     extras_require={
         'ldap': ['python-ldap>=3.1'],
         'adsi': ['pywin32>=223;platform_system=="Windows"'],
-        'all': ['python-ldap>=3.1', 'pywin32>=223;platform_system=="Windows"'],
+        'all': ['python-ldap>=3.1', 'pywin32>=224;platform_system=="Windows"'],
     },
     license='BSD',
     platforms=['any'],
