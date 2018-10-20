@@ -1,7 +1,7 @@
 Access UCI WebAuth, LDAP person records, and Active Directory user objects
 ==========================================================================
 
-Uciwebauth is a library to access identity management and authentication
+Uciwebauth is a Python library to access identity management and authentication
 services at the University of California, Irvine (UCI):
 
 1. WebAuth provides a secure, single sign-on authentication solution tool
@@ -17,7 +17,7 @@ services at the University of California, Irvine (UCI):
 :Organization:
   Laboratory for Fluorescence Dynamics. University of California, Irvine
 
-:Version: 2018.9.28
+:Version: 2018.10.18
 
 Requirements
 ------------
