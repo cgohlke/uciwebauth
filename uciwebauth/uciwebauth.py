@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # uciwebauth.py
 
-# Copyright (c) 2008-2018, Christoph Gohlke
-# Copyright (c) 2008-2018, The Regents of the University of California
+# Copyright (c) 2008-2019, Christoph Gohlke
+# Copyright (c) 2008-2019, The Regents of the University of California
 # Produced at the Laboratory for Fluorescence Dynamics
 # All rights reserved.
 #
@@ -50,7 +50,7 @@ services at the University of California, Irvine (UCI):
 :Organization:
   Laboratory for Fluorescence Dynamics. University of California, Irvine
 
-:Version: 2018.10.18
+:Version: 2019.1.1
 
 Requirements
 ------------
@@ -60,6 +60,8 @@ Requirements
 
 Revisions
 ---------
+2019.1.1
+    Update copyright year.
 2018.9.28
     Add option to authenticate with OIT LDAP service.
     Use OIT instead of Campus LDAP service.
@@ -82,7 +84,7 @@ References
 
 """
 
-__version__ = '2018.10.18'
+__version__ = '2019.1.1'
 __docformat__ = 'restructuredtext en'
 __all__ = ('WebAuth', 'WebAuthError', 'LdapPerson', 'LdapPersonError',
            'AdsiUser', 'AdsiUserError', 'WebAuthBackend')
@@ -104,7 +106,7 @@ class WebAuth():
     Attributes
     ----------
     ucinetid_auth: str or None
-        64 character string stored in UCI WebAuth database as key to
+        64-character string stored in UCI WebAuth database as key to
         other information about login.
     ucinetid : str or None
         UCInetID authenticated with key.
@@ -162,7 +164,7 @@ class WebAuth():
     LOGOUT_URL = 'https://login.uci.edu/ucinetid/webauth_logout'
 
     USER_AGENT = {'User-Agent': 'Python-urllib/%s uciwebauth.py' %
-                  sys.version.split(' ', 1)[0]}
+                                sys.version.split(' ', 1)[0]}
 
     ERROR_CODES = {
         'WEBAUTH_DOWN': 'The WebAuth Server is currently down',
@@ -185,7 +187,7 @@ class WebAuth():
     def authenticate(self, usrid, password=None):
         """Get ucinetid_auth token.
 
-        Usrid can be a UCInetId, a 64 byte WebAuth token or any string
+        Usrid can be a UCInetId, a 64-byte WebAuth token or any string
         containing the token, e.g. HTTP QUERY_STRING or HTTP_COOKIE.
 
         Raise WebAuthError on failure.
@@ -311,7 +313,6 @@ class WebAuth():
 
 class WebAuthError(Exception):
     """Base class for errors in the WebAuth class."""
-    pass
 
 
 class LdapPerson():
@@ -457,7 +458,6 @@ class LdapPerson():
 
 class LdapPersonError(Exception):
     """Base class for errors in the LdapPerson class."""
-    pass
 
 
 class AdsiUser():
@@ -510,6 +510,7 @@ class AdsiUser():
             self.user.AccountDisabled = False
             self.user.SetInfo()
             return True
+        return None
 
     def unlock(self):
         """Unlock user account. Return True if account has been unlocked."""
@@ -517,6 +518,7 @@ class AdsiUser():
             self.user.IsAccountLocked = False
             self.user.SetInfo()
             return True
+        return None
 
     def set_password(self, password, validate=None):
         """Set user account password."""
@@ -548,7 +550,6 @@ class AdsiUser():
 
 class AdsiUserError(Exception):
     """Base class for errors in the AdsiUser class."""
-    pass
 
 
 class WebAuthBackend():
