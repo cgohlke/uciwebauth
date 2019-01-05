@@ -17,7 +17,7 @@ services at the University of California, Irvine (UCI):
 :Organization:
   Laboratory for Fluorescence Dynamics. University of California, Irvine
 
-:Version: 2018.10.18
+:Version: 2019.1.1
 
 Requirements
 ------------
@@ -27,6 +27,8 @@ Requirements
 
 Revisions
 ---------
+2019.1.1
+    Update copyright year.
 2018.9.28
     Add option to authenticate with OIT LDAP service.
     Use OIT instead of Campus LDAP service.
