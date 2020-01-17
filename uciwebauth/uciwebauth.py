@@ -1,24 +1,21 @@
-# -*- coding: utf-8 -*-
 # uciwebauth.py
 
-# Copyright (c) 2008-2019, Christoph Gohlke
-# Copyright (c) 2008-2019, The Regents of the University of California
-# Produced at the Laboratory for Fluorescence Dynamics
+# Copyright (c) 2008-2020, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
-# * Redistributions of source code must retain the above copyright notice,
-#   this list of conditions and the following disclaimer.
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
 #
-# * Redistributions in binary form must reproduce the above copyright notice,
-#   this list of conditions and the following disclaimer in the documentation
-#   and/or other materials provided with the distribution.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
 #
-# * Neither the name of the copyright holder nor the names of its
-#   contributors may be used to endorse or promote products derived from
-#   this software without specific prior written permission.
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -50,18 +47,23 @@ services at the University of California, Irvine (UCI):
 :Organization:
   Laboratory for Fluorescence Dynamics. University of California, Irvine
 
-:Version: 2019.1.1
+:License: BSD 3-Clause
+
+:Version: 2020.1.1
 
 Requirements
 ------------
-* `CPython 3.5+ <https://www.python.org>`_
-* `Python-ldap 3.1 <https://www.python-ldap.org>`_
-* `Pywin32 224 <https://github.com/mhammond/pywin32>`_
+* `CPython >= 3.6 <https://www.python.org>`_
+* `Python-ldap 3.2 <https://www.python-ldap.org>`_
+* `Pywin32 227 <https://github.com/mhammond/pywin32>`_
 
 Revisions
 ---------
-2019.1.1
-    Update copyright year.
+2020.1.1
+    Remove support for Python 3.5.
+    Update copyright.
+2019.1.4
+    Fix static code analysis.
 2018.9.28
     Add option to authenticate with OIT LDAP service.
     Use OIT instead of Campus LDAP service.
@@ -69,7 +71,7 @@ Revisions
     Move uciwebauth.py module into uciwebauth package.
 2018.5.25
     Add Active Directory Service Interfaces for user accounts.
-    Drop support for Python 2.
+    Remove support for Python 2.
     Remove Django backend.
 2008.x.x
     Initial release.
@@ -84,10 +86,12 @@ References
 
 """
 
-__version__ = '2019.1.1'
-__docformat__ = 'restructuredtext en'
-__all__ = ('WebAuth', 'WebAuthError', 'LdapPerson', 'LdapPersonError',
-           'AdsiUser', 'AdsiUserError', 'WebAuthBackend')
+__version__ = '2020.1.1'
+
+__all__ = (
+    'WebAuth', 'WebAuthError', 'WebAuthBackend',
+    'LdapPerson', 'LdapPersonError', 'AdsiUser', 'AdsiUserError'
+)
 
 
 import sys
@@ -98,7 +102,7 @@ from urllib.parse import urlencode, urlunsplit
 from urllib.request import Request, urlopen
 
 
-class WebAuth():
+class WebAuth:
     """Authenticate against UCI WebAuth service.
 
     Raise WebAuthError if authentication fails.
@@ -159,24 +163,29 @@ class WebAuth():
     No valid ucinetid_auth token found
 
     """
+
     LOGIN_URL = 'https://login.uci.edu/ucinetid/webauth'
     CHECK_URL = 'https://login.uci.edu/ucinetid/webauth_check'
     LOGOUT_URL = 'https://login.uci.edu/ucinetid/webauth_logout'
 
-    USER_AGENT = {'User-Agent': 'Python-urllib/%s uciwebauth.py' %
-                                sys.version.split(' ', 1)[0]}
+    USER_AGENT = {
+        'User-Agent': 'Python-urllib/{} uciwebauth.py'.format(
+            sys.version.split(' ', 1)[0])
+    }
 
     ERROR_CODES = {
         'WEBAUTH_DOWN': 'The WebAuth Server is currently down',
         'NO_AUTH_KEY': 'No ucinetid_auth was provided',
         'NOT_FOUND': 'The ucinetid_auth is not in the database',
-        'NO_AFFILIATION': 'Access denied to see user information'}
+        'NO_AFFILIATION': 'Access denied to see user information',
+    }
 
     ATTRS = {
         'ucinetid': str, 'auth_host': str, 'time_created': int,
         'last_checked': int, 'max_idle_time': int, 'login_timeout': int,
         'campus_id': str, 'uci_affiliations': str, 'age_in_seconds': int,
-        'seconds_since_checked': int, 'auth_fail': str, 'error_code': str}
+        'seconds_since_checked': int, 'auth_fail': str, 'error_code': str,
+    }
 
     def __init__(self, usrid=None, password=None):
         if usrid:
@@ -214,8 +223,8 @@ class WebAuth():
         request = Request(self.CHECK_URL, data, self.USER_AGENT)
         try:
             response = urlopen(request).read()
-        except Exception as e:
-            raise WebAuthError('UCI webauth_check site not found %s' % str(e))
+        except Exception as exc:
+            raise WebAuthError('UCI webauth_check site not found') from exc
         for line in response.splitlines():
             line = line.decode('utf8')
             try:
@@ -246,7 +255,7 @@ class WebAuth():
             raise WebAuthError('Authentication expired')
         if auth_host and self.auth_host != auth_host:
             raise WebAuthError(
-                'Host mismatch: %s != %s' % (self.auth_host, auth_host))
+                f'Host mismatch: ({self.auth_host} != {auth_host}')
 
     def login_url(self, return_url=''):
         """Return URL to log in to WebAuth."""
@@ -280,21 +289,27 @@ class WebAuth():
         """Authenticate username/password and get new ucinetid_auth token."""
         if password is None or not ucinetid or len(ucinetid) > 8:
             raise WebAuthError('Invalid ucinetid or password')
-        data = urlencode({'ucinetid': ucinetid, 'password': password,
-                          'return_url': '', 'referer': '', 'info_text': '',
-                          'info_url': '', 'submit_type': '',
-                          'login_button': 'Login'}).encode('utf-8')
+        data = urlencode({
+            'ucinetid': ucinetid,
+            'password': password,
+            'return_url': '',
+            'referer': '',
+            'info_text': '',
+            'info_url': '',
+            'submit_type': '',
+            'login_button': 'Login',
+            }).encode('utf-8')
         request = Request(self.LOGIN_URL, data, self.USER_AGENT)
         try:
             response = urlopen(request)
-        except Exception:
-            raise WebAuthError('UCI webauth site not found')
+        except Exception as exc:
+            raise WebAuthError('UCI webauth site not found') from exc
         try:
             cookie = response.info()['Set-Cookie']
             if 'ucinetid_auth' not in cookie:
                 raise ValueError()
-        except Exception:
-            raise WebAuthError('Cookie not found')
+        except Exception as exc:
+            raise WebAuthError('Cookie not found') from exc
         ucinetid_auth = self._search_token(cookie)
         if not ucinetid_auth:
             raise WebAuthError('Authentication failed')
@@ -303,19 +318,19 @@ class WebAuth():
 
     def __str__(self):
         """Return string with information about authenticated UCInetId."""
-        output = ['ucinetid_auth=%s' % self.ucinetid_auth]
+        s = [f'ucinetid_auth={self.ucinetid_auth}']
         for attr in self.ATTRS:
             value = getattr(self, attr)
             if value is not None:
-                output.append('%s=%s' % (attr, value))
-        return '\n'.join(output)
+                s.append(f'{attr}={value}')
+        return '\n'.join(s)
 
 
 class WebAuthError(Exception):
     """Base class for errors in the WebAuth class."""
 
 
-class LdapPerson():
+class LdapPerson:
     """A person entry in the UCI LDAP directory.
 
     Raise LdapPersonError if search fails or results are ambiguous
@@ -333,11 +348,12 @@ class LdapPerson():
     ...     print('LdapPerson failed')
     ... else:
     ...     p2 = LdapPerson(p.uciCampusID)
-    ...     p3 = LdapPerson('*%s %s*' % (p.givenName, p.middleName), 'cn')
+    ...     p3 = LdapPerson(f'*{p.givenName} {p.middleName}*', 'cn')
     ...     (p.cn == p2.cn) and (p.mail == p3.mail)
     True
 
     """
+
     SERVER = 'ldaps://ldap.oit.uci.edu:636'  # 'ldap://ldap.oit.uci.edu:389'
     BASEDN = 'ou=people,dc=uci,dc=edu'
     TYPES = b'uciPerson', b'eduPerson', b'PERSON', b'STUDENT'
@@ -389,23 +405,23 @@ class LdapPerson():
         if query[0] == '(' and query[-1] == ')':
             pass
         elif rdn:
-            query = '(%s=%s)' % (rdn, query)
+            query = f'({rdn}={query})'
         else:
             try:
-                query = '(uciCampusID=%.12i)' % int(query)
+                query = f'(uciCampusID={query:.12i})'
             except Exception:
-                query = '(uid=%s)' % query
+                query = f'(uid={query})'
 
         if uid and pwd and server == self.SERVER:
             server = server.replace('ldap.', 'ldap-auth.')
 
         try:
             ldapobj = ldap.initialize(server)
-        except ldap.LDAPError as e:
-            raise LdapPersonError(e)
+        except ldap.LDAPError as exc:
+            raise LdapPersonError('LDAP initialization failed') from exc
 
         if uid and pwd:
-            ldapobj.simple_bind_s('uid=%s,%s' % (uid, basedn), pwd)
+            ldapobj.simple_bind_s(f'uid={uid},{basedn}', pwd)
 
         try:
             id_ = ldapobj.search(basedn, ldap.SCOPE_SUBTREE, query, None)
@@ -416,15 +432,15 @@ class LdapPerson():
                     break
                 elif ltype == ldap.RES_SEARCH_ENTRY:
                     results.append(data)
-        except ldap.LDAPError as e:
-            raise LdapPersonError(e)
+        except ldap.LDAPError as exc:
+            raise LdapPersonError('LDAP search failed') from exc
 
         if len(results) != 1:
-            raise LdapPersonError('%s not found or result ambiguous.' % query)
+            raise LdapPersonError(f'{query} not found or result ambiguous')
 
         self.dn, self.records = results[0][0]
         if not self._is_type(types):
-            raise LdapPersonError('%s has wrong type.' % query)
+            raise LdapPersonError(f'{query} has wrong type')
 
         for attr in attributes:
             if attr in self.records:
@@ -452,7 +468,7 @@ class LdapPerson():
 
     def __str__(self):
         """Return string with information about person."""
-        return '\n'.join('%s=%s' % (attr, getattr(self, attr))
+        return '\n'.join('{}={}'.format(attr, getattr(self, attr))
                          for attr in self.ATTRS if getattr(self, attr))
 
 
@@ -460,7 +476,7 @@ class LdapPersonError(Exception):
     """Base class for errors in the LdapPerson class."""
 
 
-class AdsiUser():
+class AdsiUser:
     """Active Directory Service Interfaces User Account.
 
     Examples
@@ -472,6 +488,7 @@ class AdsiUser():
     >>> user.set_password('new-password')
 
     """
+
     def __init__(self, userid, dnname, username, password):
         """Initialize ADSI user object from userid.
 
@@ -493,6 +510,7 @@ class AdsiUser():
         """
         import win32com  # noqa: delayed import
         import win32com.adsi  # noqa: delayed import
+
         self.user = ''
         adsi = win32com.client.Dispatch('ADsNameSpaces')
         ldap = adsi.getobject('', 'LDAP:')
@@ -542,17 +560,18 @@ class AdsiUser():
 
     def __str__(self):
         """Return string with information about user."""
-        return '\n'.join('%s: %s' % (key, getattr(self.user, key)) for key in (
-            'cn', 'samAccountName', 'Fullname', 'Description',
-            'PasswordMinimumLength', 'AccountExpirationDate',
-            'AccountDisabled'))
+        return '\n'.join(
+            '{}: {}'.format(key, getattr(self.user, key)) for key in (
+                'cn', 'samAccountName', 'Fullname', 'Description',
+                'PasswordMinimumLength', 'AccountExpirationDate',
+                'AccountDisabled'))
 
 
 class AdsiUserError(Exception):
     """Base class for errors in the AdsiUser class."""
 
 
-class WebAuthBackend():
+class WebAuthBackend:
     """UCI WebAuth backend for use in web apps.
 
     Attributes
@@ -570,6 +589,7 @@ class WebAuthBackend():
         URL of the web app.
 
     """
+
     def __init__(self, request=None, url=None, usrid=None, useldap=True,
                  timeout=None):
         """Initialize backend from request."""
@@ -598,14 +618,14 @@ class WebAuthBackend():
 
         if usrid is None:
             # look in query string and cookies
-            usrid = '%s %s' % (self.environ.get('QUERY_STRING'),
-                               self.environ.get('HTTP_COOKIE'))
+            usrid = '{} {}'.format(self.environ.get('QUERY_STRING'),
+                                   self.environ.get('HTTP_COOKIE'))
 
         try:
             self.auth.authenticate(usrid)
             self.auth.validate(timeout=timeout, auth_host=remoteaddr)
-        except WebAuthError as e:
-            self.messages.append(str(e))
+        except WebAuthError as exc:
+            self.messages.append(str(exc))
             return
         self.ucinetid = self.username = self.auth.ucinetid
 
@@ -614,18 +634,18 @@ class WebAuthBackend():
                 self.ldap = LdapPerson(self.auth.campus_id)
                 if self.ldap.pretty_name:
                     self.username = self.ldap.pretty_name
-            except LdapPersonError as e:
+            except LdapPersonError as exc:
                 self.username = self.ucinetid
-                self.messages.append(str(e))
+                self.messages.append(str(exc))
 
     def __str__(self):
         """Return HTML code for logging in to/out of UCI WebAuth."""
         if self.messages:
-            return ('<a href="%s" title="Reason: %s">'
-                    'Log in</a> with your UCInetId' % (
+            return ('<a href="{}" title="Reason: {}">'
+                    'Log in</a> with your UCInetId'.format(
                         self.login_url(), escape(self.messages[0])))
-        return ('Welcome, <strong>%s</strong> '
-                '[ <a href="%s">Log out</a> ]' % (
+        return ('Welcome, <strong>{}</strong> '
+                '[ <a href="{}">Log out</a> ]'.format(
                     escape(self.username), self.logout_url()))
 
     def login_url(self):
@@ -678,48 +698,53 @@ def webauth_test(request=None, url=None):
 
     auth = WebAuthBackend(request, url)
 
-    html = ['<html><body>',
-            '<h1>UCI WebAuth Test</h1>',
-            '<p><a href="%s">%s</a></p>' % (auth.url, escape(auth.url)),
-            '<p>%s</p>' % auth,
-            '<h2>WebAuth Messages</h2><ul>']
+    html = [
+        '<html><body>',
+        '<h1>UCI WebAuth Test</h1>',
+        '<p><a href="{}">{}</a></p>'.format(auth.url, escape(auth.url)),
+        '<p>{}</p>'.format(auth),
+        '<h2>WebAuth Messages</h2><ul>',
+    ]
     if auth.messages:
         for msg in auth.messages:
-            html.append('<li>%s</li>' % escape(msg))
+            html.append('<li>{}</li>'.format(escape(msg)))
     else:
         html.append('<li>None</li>')
     html.append('</ul>')
     html.append('<h2>WebAuth Record</h2><ul>')
     for item in str(auth.auth).splitlines():
         k, v = item.split('=', 1)
-        html.append('<li>%s: <strong>%s</strong></li>' % (k, escape(v)))
+        html.append('<li>{}: <strong>{}</strong></li>'.format(k, escape(v)))
     html.append('</ul>')
     html.append('<h2>LDAP Record</h2><ul>')
     if auth.ldap and auth.ldap.cn:
         for item in str(auth.ldap).splitlines():
             k, v = item.split('=', 1)
-            html.append('<li>%s: <strong>%s</strong></li>' % (k, escape(v)))
+            html.append(
+                '<li>{}: <strong>{}</strong></li>'.format(k, escape(v)))
     else:
         html.append('<li>None</li>')
     html.append('</ul>')
 
     html.append('<h2>Environment Variables</h2><ul>')
-    for var in ('AUTH_TYPE', 'AUTH_PASS', 'CONTENT_LENGTH', 'CONTENT_TYPE',
-                'DATE_GMT', 'DATE_LOCAL', 'DOCUMENT_NAME', 'DOCUMENT_ROOT',
-                'DOCUMENT_URI', 'GATEWAY_INTERFACE', 'LAST_MODIFIED',
-                'PATH_INFO', 'PATH_TRANSLATED', 'QUERY_STRING', 'REMOTE_ADDR',
-                'REMOTE_HOST', 'REMOTE_IDENT', 'REMOTE_USER', 'REQUEST_METHOD',
-                'SCRIPT_NAME', 'SERVER_NAME', 'SERVER_PORT', 'SERVER_PROTOCOL',
-                'SERVER_ROOT', 'SERVER_SOFTWARE', 'HTTP_ACCEPT',
-                'HTTP_CONNECTION', 'HTTP_HOST', 'HTTP_PRAGMA', 'HTTP_REFERER',
-                'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_ACCEPT_CHARSET',
-                'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
-                'HTTP_CACHE_CONTROL', 'PATH'):
+    for var in (
+        'AUTH_TYPE', 'AUTH_PASS', 'CONTENT_LENGTH', 'CONTENT_TYPE',
+        'DATE_GMT', 'DATE_LOCAL', 'DOCUMENT_NAME', 'DOCUMENT_ROOT',
+        'DOCUMENT_URI', 'GATEWAY_INTERFACE', 'LAST_MODIFIED',
+        'PATH_INFO', 'PATH_TRANSLATED', 'QUERY_STRING', 'REMOTE_ADDR',
+        'REMOTE_HOST', 'REMOTE_IDENT', 'REMOTE_USER', 'REQUEST_METHOD',
+        'SCRIPT_NAME', 'SERVER_NAME', 'SERVER_PORT', 'SERVER_PROTOCOL',
+        'SERVER_ROOT', 'SERVER_SOFTWARE', 'HTTP_ACCEPT',
+        'HTTP_CONNECTION', 'HTTP_HOST', 'HTTP_PRAGMA', 'HTTP_REFERER',
+        'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_ACCEPT_CHARSET',
+        'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
+        'HTTP_CACHE_CONTROL', 'PATH',
+    ):
         value = environ.get(var)
         if value is None:
             value = 'None'
-        html.append('<li>%s: <strong>%s</strong></li>' % (
-            var, escape(value)))
+        html.append(
+            '<li>{}: <strong>{}</strong></li>'.format(var, escape(value)))
     html.append('</ul>')
 
     html.append('<h2>GET Data</h2><ul>')
@@ -727,7 +752,7 @@ def webauth_test(request=None, url=None):
         html.append('<li>None</li>')
     else:
         for key in args.keys():
-            html.append('<li>%s: <strong>%s</strong></li>' % (
+            html.append('<li>{}: <strong>{}</strong></li>'.format(
                 escape(key), escape(args.get(key))))
     html.append('</ul>')
 
@@ -736,7 +761,7 @@ def webauth_test(request=None, url=None):
         html.append('<li>None</li>')
     else:
         for key in form.keys():
-            html.append('<li>%s: <strong>%s</strong></li>' % (
+            html.append('<li>{}: <strong>{}</strong></li>'.format(
                 escape(key), escape(form.get(key))))
     html.append('</ul>')
 
@@ -754,8 +779,10 @@ def main():
         print(webauth_test(url=url))
     elif len(sys.argv) == 3:
         import doctest
-        globs = {'TEST_USER': sys.argv[1],  # Enter a UCInetId for testing
-                 'TEST_PASSWORD': sys.argv[2]}  # Enter a password for testing
+        globs = {
+            'TEST_USER': sys.argv[1],  # Enter a UCInetId for testing
+            'TEST_PASSWORD': sys.argv[2],  # Enter a password for testing
+        }
         print(LdapPerson(globs['TEST_USER'],
                          # uid=globs['TEST_USER'],
                          # password=globs['TEST_PASSWORD']
