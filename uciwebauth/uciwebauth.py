@@ -1,6 +1,6 @@
 # uciwebauth.py
 
-# Copyright (c) 2008-2020, Christoph Gohlke
+# Copyright (c) 2008-2021, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -49,19 +49,22 @@ services at the University of California, Irvine (UCI):
 
 :License: BSD 3-Clause
 
-:Version: 2020.1.1
+:Version: 2021.6.6
 
 Requirements
 ------------
-* `CPython >= 3.6 <https://www.python.org>`_
-* `Python-ldap 3.2 <https://www.python-ldap.org>`_
-* `Pywin32 227 <https://github.com/mhammond/pywin32>`_
+* `CPython >= 3.7 <https://www.python.org>`_
+* `Python-ldap 3.3 <https://www.python-ldap.org>`_
+* `Pywin32 300 <https://github.com/mhammond/pywin32>`_
 
 Revisions
 ---------
+2021.6.6
+    Fix uciCampusID query format.
+    Use new WebAuth URLs.
+    Remove support for Python 3.6 (NEP 29).
 2020.1.1
     Remove support for Python 3.5.
-    Update copyright.
 2019.1.4
     Fix static code analysis.
 2018.9.28
@@ -82,15 +85,20 @@ References
    https://www.oit.uci.edu/idm/webauth/
 2. UCI LDAP Directory Service. https://www.oit.uci.edu/idm/ldap/
 3. Active Directory Service Interfaces.
-   https://docs.microsoft.com/en-us/windows/desktop/adsi/
+   https://docs.microsoft.com/en-us/windows/win32/adsi/
 
 """
 
-__version__ = '2020.1.1'
+__version__ = '2021.6.6'
 
 __all__ = (
-    'WebAuth', 'WebAuthError', 'WebAuthBackend',
-    'LdapPerson', 'LdapPersonError', 'AdsiUser', 'AdsiUserError'
+    'WebAuth',
+    'WebAuthError',
+    'WebAuthBackend',
+    'LdapPerson',
+    'LdapPersonError',
+    'AdsiUser',
+    'AdsiUserError',
 )
 
 
@@ -164,13 +172,14 @@ class WebAuth:
 
     """
 
-    LOGIN_URL = 'https://login.uci.edu/ucinetid/webauth'
-    CHECK_URL = 'https://login.uci.edu/ucinetid/webauth_check'
-    LOGOUT_URL = 'https://login.uci.edu/ucinetid/webauth_logout'
+    LOGIN_URL = 'https://login.uci.edu/{}/webauth'
+    CHECK_URL = 'https://login.uci.edu/uciwebauth/webauth_check'
+    LOGOUT_URL = 'https://login.uci.edu/uciwebauth/webauth_logout'
 
     USER_AGENT = {
         'User-Agent': 'Python-urllib/{} uciwebauth.py'.format(
-            sys.version.split(' ', 1)[0])
+            sys.version.split(' ', 1)[0]
+        )
     }
 
     ERROR_CODES = {
@@ -181,13 +190,28 @@ class WebAuth:
     }
 
     ATTRS = {
-        'ucinetid': str, 'auth_host': str, 'time_created': int,
-        'last_checked': int, 'max_idle_time': int, 'login_timeout': int,
-        'campus_id': str, 'uci_affiliations': str, 'age_in_seconds': int,
-        'seconds_since_checked': int, 'auth_fail': str, 'error_code': str,
+        'ucinetid': str,
+        'auth_host': str,
+        'x_forwarded_for': str,
+        'time_created': int,
+        'last_checked': int,
+        'max_idle_time': int,
+        'login_timeout': int,
+        'campus_id': str,
+        'uci_affiliations': str,
+        'age_in_seconds': int,
+        'seconds_since_checked': int,
+        'auth_contexts': str,
+        'auth_methods': str,
+        'auth_fail': str,
+        'error_code': str,
     }
 
-    def __init__(self, usrid=None, password=None):
+    def __init__(self, usrid=None, password=None, duo=True):
+        app = 'duo' if duo else 'uciwebauth'
+        self._login_url = WebAuth.LOGIN_URL.format(app)
+        self._check_url = WebAuth.CHECK_URL
+        self._logout_url = WebAuth.LOGOUT_URL
         if usrid:
             self.authenticate(usrid, password)
         else:
@@ -219,14 +243,14 @@ class WebAuth:
         """
         if not self.ucinetid_auth:
             return
-        data = urlencode({'ucinetid_auth': self.ucinetid_auth}).encode('utf-8')
-        request = Request(self.CHECK_URL, data, self.USER_AGENT)
+        data = urlencode({'ucinetid_auth': self.ucinetid_auth}).encode()
+        request = Request(self._check_url, data, self.USER_AGENT)
         try:
             response = urlopen(request).read()
         except Exception as exc:
             raise WebAuthError('UCI webauth_check site not found') from exc
         for line in response.splitlines():
-            line = line.decode('utf8')
+            line = line.decode()
             try:
                 attr, value = line.strip().split('=')
                 setattr(self, attr, self.ATTRS[attr](value))
@@ -239,8 +263,8 @@ class WebAuth:
         """Clear ucinetid_auth entry in UCI WebAuth database."""
         if not self.ucinetid_auth:
             return
-        data = urlencode({'ucinetid_auth': self.ucinetid_auth}).encode('utf-8')
-        request = Request(self.LOGOUT_URL, data, self.USER_AGENT)
+        data = urlencode({'ucinetid_auth': self.ucinetid_auth}).encode()
+        request = Request(self._logout_url, data, self.USER_AGENT)
         try:
             urlopen(request).read()
         except Exception:
@@ -255,18 +279,26 @@ class WebAuth:
             raise WebAuthError('Authentication expired')
         if auth_host and self.auth_host != auth_host:
             raise WebAuthError(
-                f'Host mismatch: ({self.auth_host} != {auth_host}')
+                f'Host mismatch: ({self.auth_host} != {auth_host}'
+            )
 
     def login_url(self, return_url=''):
         """Return URL to log in to WebAuth."""
-        return self.LOGIN_URL + '?' + urlencode(
-            {'return_url': return_url}).replace('&', '&amp;')
+        return (
+            self._login_url
+            + '?'
+            + urlencode({'return_url': return_url}).replace('&', '&amp;')
+        )
 
     def logout_url(self, return_url=''):
         """Return URL to log out of WebAuth."""
-        return self.LOGOUT_URL + '?' + urlencode(
-            {'ucinetid_auth': self.ucinetid_auth, 'return_url': return_url}
+        return (
+            self._logout_url
+            + '?'
+            + urlencode(
+                {'ucinetid_auth': self.ucinetid_auth, 'return_url': return_url}
             ).replace('&', '&amp;')
+        )
 
     def _clear(self):
         """Initialize attributes to None."""
@@ -289,17 +321,20 @@ class WebAuth:
         """Authenticate username/password and get new ucinetid_auth token."""
         if password is None or not ucinetid or len(ucinetid) > 8:
             raise WebAuthError('Invalid ucinetid or password')
-        data = urlencode({
-            'ucinetid': ucinetid,
-            'password': password,
-            'return_url': '',
-            'referer': '',
-            'info_text': '',
-            'info_url': '',
-            'submit_type': '',
-            'login_button': 'Login',
-            }).encode('utf-8')
-        request = Request(self.LOGIN_URL, data, self.USER_AGENT)
+        data = urlencode(
+            {
+                'ucinetid': ucinetid,
+                'password': password,
+                'return_url': '',
+                'referer': '',
+                'info_text': '',
+                'info_url': '',
+                'submit_type': '',
+                'return_auth_contexts': 'true',
+                'login_button': 'Login',
+            }
+        ).encode()
+        request = Request(self._login_url, data, self.USER_AGENT)
         try:
             response = urlopen(request)
         except Exception as exc:
@@ -358,35 +393,107 @@ class LdapPerson:
     BASEDN = 'ou=people,dc=uci,dc=edu'
     TYPES = b'uciPerson', b'eduPerson', b'PERSON', b'STUDENT'
     ATTRS = (
-        'appointmentType', 'cn', 'createTimestamp', 'dn', 'department',
-        'departmentNumber', 'displayName', 'eduPersonAffiliation',
-        'eduPersonPrincipalName', 'eduPersonPrincipalNamePrior',
-        'eduPersonOrgDN', 'eduPersonScopedAffiliation', 'employeeNumber',
-        'facsimileTelephoneNumber', 'givenName', 'l', 'mail', 'major',
-        'memberOf', 'middleName', 'modifyTimestamp', 'myDotName', 'o',
-        'objectClass', 'ou', 'postalAddress', 'postalCode', 'sn', 'st',
-        'telephoneNumber', 'title', 'uciAdminAppCSS', 'uciAffiliation',
-        'uciApplicantEmail', 'uciCampusID', 'uciCTOCode', 'uciEmployeeClass',
-        'uciEmployeeClassDescription', 'uciEmployeeGivenName',
-        'uciEmployeeMiddleName', 'uciEmployeeSN', 'uciEmployeeStatus',
-        'uciEmployeeStatusCode', 'uciFloater', 'uciGuestExpiration',
-        'uciHomeDepartment', 'uciHomeDepartmentCode',
-        'uciHomeDepartmentCodeTitle', 'uciHrStatus', 'uciKFSCampusCode',
-        'uciKFSChart', 'uciKFSChartOrgCode', 'uciKFSChartOrgName',
-        'uciKFSOrgCode', 'uciMailDeliveryPoint', 'ucinetidLocked',
-        'ucinetidLockedAt', 'ucinetidPasswordChangeAt', 'ucinetidReset',
-        'ucinetidResetAt', 'uciPrimaryCTOCode', 'uciPrimaryEmployeeClass',
-        'uciPrimaryEmployeeClassDescription', 'uciPrimaryTitle',
-        'uciPrimaryTitleCode', 'uciPublishFlag', 'uciRecentlyHired',
-        'uciReleaseFlag', 'uciSNAPTemplate', 'uciSponsorDepartment',
-        'uciSponsorDepartmentCode', 'uciSponsorID', 'uciStudentEmailRelease',
-        'uciStudentGivenName', 'uciStudentID', 'uciStudentLevel',
-        'uciStudentMiddleName', 'uciStudentSN', 'uciSupervisorDN',
-        'uciSupervisorRoleFlag', 'uciTestAccount', 'uciUCNetID', 'uciVPNFlag',
-        'uciWebMailAddress', 'uciZotCode', 'uciZotCodeName', 'uid')
+        'appointmentType',
+        'cn',
+        'createTimestamp',
+        'dn',
+        'department',
+        'departmentNumber',
+        'displayName',
+        'eduPersonAffiliation',
+        'eduPersonPrincipalName',
+        'eduPersonPrincipalNamePrior',
+        'eduPersonOrgDN',
+        'eduPersonScopedAffiliation',
+        'employeeNumber',
+        'facsimileTelephoneNumber',
+        'givenName',
+        'l',
+        'mail',
+        'major',
+        'memberOf',
+        'middleName',
+        'modifyTimestamp',
+        'myDotName',
+        'o',
+        'objectClass',
+        'ou',
+        'postalAddress',
+        'postalCode',
+        'sn',
+        'st',
+        'telephoneNumber',
+        'title',
+        'uciAdminAppCSS',
+        'uciAffiliation',
+        'uciApplicantEmail',
+        'uciCampusID',
+        'uciCTOCode',
+        'uciEmployeeClass',
+        'uciEmployeeClassDescription',
+        'uciEmployeeGivenName',
+        'uciEmployeeMiddleName',
+        'uciEmployeeSN',
+        'uciEmployeeStatus',
+        'uciEmployeeStatusCode',
+        'uciFloater',
+        'uciGuestExpiration',
+        'uciHomeDepartment',
+        'uciHomeDepartmentCode',
+        'uciHomeDepartmentCodeTitle',
+        'uciHrStatus',
+        'uciKFSCampusCode',
+        'uciKFSChart',
+        'uciKFSChartOrgCode',
+        'uciKFSChartOrgName',
+        'uciKFSOrgCode',
+        'uciMailDeliveryPoint',
+        'ucinetidLocked',
+        'ucinetidLockedAt',
+        'ucinetidPasswordChangeAt',
+        'ucinetidReset',
+        'ucinetidResetAt',
+        'uciPrimaryCTOCode',
+        'uciPrimaryEmployeeClass',
+        'uciPrimaryEmployeeClassDescription',
+        'uciPrimaryTitle',
+        'uciPrimaryTitleCode',
+        'uciPublishFlag',
+        'uciRecentlyHired',
+        'uciReleaseFlag',
+        'uciSNAPTemplate',
+        'uciSponsorDepartment',
+        'uciSponsorDepartmentCode',
+        'uciSponsorID',
+        'uciStudentEmailRelease',
+        'uciStudentGivenName',
+        'uciStudentID',
+        'uciStudentLevel',
+        'uciStudentMiddleName',
+        'uciStudentSN',
+        'uciSupervisorDN',
+        'uciSupervisorRoleFlag',
+        'uciTestAccount',
+        'uciUCNetID',
+        'uciVPNFlag',
+        'uciWebMailAddress',
+        'uciZotCode',
+        'uciZotCodeName',
+        'uid',
+    )
 
-    def __init__(self, query, rdn=None, uid=None, pwd=None, verifyssl=False,
-                 server=SERVER, basedn=BASEDN, attributes=ATTRS, types=TYPES):
+    def __init__(
+        self,
+        query,
+        rdn=None,
+        uid=None,
+        pwd=None,
+        verifyssl=False,
+        server=SERVER,
+        basedn=BASEDN,
+        attributes=ATTRS,
+        types=TYPES,
+    ):
         """Search LDAP directory for query and set attributes from results.
 
         Query is searched in 'uid' (if string), 'uciCampusID' (if int),
@@ -408,7 +515,7 @@ class LdapPerson:
             query = f'({rdn}={query})'
         else:
             try:
-                query = f'(uciCampusID={query:.12i})'
+                query = f'(uciCampusID={int(query):012d})'
             except Exception:
                 query = f'(uid={query})'
 
@@ -433,10 +540,12 @@ class LdapPerson:
                 elif ltype == ldap.RES_SEARCH_ENTRY:
                     results.append(data)
         except ldap.LDAPError as exc:
-            raise LdapPersonError('LDAP search failed') from exc
+            raise LdapPersonError(f'LDAP search failed: {query!r}') from exc
 
         if len(results) != 1:
-            raise LdapPersonError(f'{query} not found or result ambiguous')
+            raise LdapPersonError(
+                f'{query} not found or result ambiguous: {results!r}'
+            )
 
         self.dn, self.records = results[0][0]
         if not self._is_type(types):
@@ -444,14 +553,15 @@ class LdapPerson:
 
         for attr in attributes:
             if attr in self.records:
-                value = self.records[attr][0].decode('utf8')
+                value = self.records[attr][0].decode()
                 setattr(self, attr, value)
             else:
                 setattr(self, attr, None)
 
         try:
-            self.pretty_name = ' '.join((self.givenName.split()[0].title(),
-                                         self.sn.title()))
+            self.pretty_name = ' '.join(
+                (self.givenName.split()[0].title(), self.sn.title())
+            )
         except Exception:
             self.pretty_name = None
 
@@ -468,8 +578,11 @@ class LdapPerson:
 
     def __str__(self):
         """Return string with information about person."""
-        return '\n'.join('{}={}'.format(attr, getattr(self, attr))
-                         for attr in self.ATTRS if getattr(self, attr))
+        return '\n'.join(
+            '{}={}'.format(attr, getattr(self, attr))
+            for attr in self.ATTRS
+            if getattr(self, attr)
+        )
 
 
 class LdapPersonError(Exception):
@@ -550,8 +663,9 @@ class AdsiUser:
     @property
     def must_change_password(self):
         """Return if user must change password at next logon."""
-        return (self.user.pwdLastSet.lowpart +
-                self.user.pwdLastSet.highpart == 0)
+        return (
+            self.user.pwdLastSet.lowpart + self.user.pwdLastSet.highpart == 0
+        )
 
     @property
     def is_disabled(self):
@@ -561,10 +675,17 @@ class AdsiUser:
     def __str__(self):
         """Return string with information about user."""
         return '\n'.join(
-            '{}: {}'.format(key, getattr(self.user, key)) for key in (
-                'cn', 'samAccountName', 'Fullname', 'Description',
-                'PasswordMinimumLength', 'AccountExpirationDate',
-                'AccountDisabled'))
+            '{}: {}'.format(key, getattr(self.user, key))
+            for key in (
+                'cn',
+                'samAccountName',
+                'Fullname',
+                'Description',
+                'PasswordMinimumLength',
+                'AccountExpirationDate',
+                'AccountDisabled',
+            )
+        )
 
 
 class AdsiUserError(Exception):
@@ -590,8 +711,9 @@ class WebAuthBackend:
 
     """
 
-    def __init__(self, request=None, url=None, usrid=None, useldap=True,
-                 timeout=None):
+    def __init__(
+        self, request=None, url=None, usrid=None, useldap=True, timeout=None
+    ):
         """Initialize backend from request."""
         self.auth = WebAuth()
         self.ldap = None
@@ -618,8 +740,10 @@ class WebAuthBackend:
 
         if usrid is None:
             # look in query string and cookies
-            usrid = '{} {}'.format(self.environ.get('QUERY_STRING'),
-                                   self.environ.get('HTTP_COOKIE'))
+            usrid = '{} {}'.format(
+                self.environ.get('QUERY_STRING'),
+                self.environ.get('HTTP_COOKIE'),
+            )
 
         try:
             self.auth.authenticate(usrid)
@@ -641,12 +765,18 @@ class WebAuthBackend:
     def __str__(self):
         """Return HTML code for logging in to/out of UCI WebAuth."""
         if self.messages:
-            return ('<a href="{}" title="Reason: {}">'
-                    'Log in</a> with your UCInetId'.format(
-                        self.login_url(), escape(self.messages[0])))
-        return ('Welcome, <strong>{}</strong> '
-                '[ <a href="{}">Log out</a> ]'.format(
-                    escape(self.username), self.logout_url()))
+            return (
+                '<a href="{}" title="Reason: {}">'
+                'Log in</a> with your UCInetId'.format(
+                    self.login_url(), escape(self.messages[0])
+                )
+            )
+        return (
+            'Welcome, <strong>{}</strong> '
+            '[ <a href="{}">Log out</a> ]'.format(
+                escape(self.username), self.logout_url()
+            )
+        )
 
     def login_url(self):
         """Return URL for logging in to UCI WebAuth system."""
@@ -686,6 +816,7 @@ def webauth_test(request=None, url=None):
     if request is None:
         # CGI request
         import cgi
+
         args = cgi.FieldStorage()
         args.get = args.getvalue
         form = None
@@ -721,30 +852,58 @@ def webauth_test(request=None, url=None):
         for item in str(auth.ldap).splitlines():
             k, v = item.split('=', 1)
             html.append(
-                '<li>{}: <strong>{}</strong></li>'.format(k, escape(v)))
+                '<li>{}: <strong>{}</strong></li>'.format(k, escape(v))
+            )
     else:
         html.append('<li>None</li>')
     html.append('</ul>')
 
     html.append('<h2>Environment Variables</h2><ul>')
     for var in (
-        'AUTH_TYPE', 'AUTH_PASS', 'CONTENT_LENGTH', 'CONTENT_TYPE',
-        'DATE_GMT', 'DATE_LOCAL', 'DOCUMENT_NAME', 'DOCUMENT_ROOT',
-        'DOCUMENT_URI', 'GATEWAY_INTERFACE', 'LAST_MODIFIED',
-        'PATH_INFO', 'PATH_TRANSLATED', 'QUERY_STRING', 'REMOTE_ADDR',
-        'REMOTE_HOST', 'REMOTE_IDENT', 'REMOTE_USER', 'REQUEST_METHOD',
-        'SCRIPT_NAME', 'SERVER_NAME', 'SERVER_PORT', 'SERVER_PROTOCOL',
-        'SERVER_ROOT', 'SERVER_SOFTWARE', 'HTTP_ACCEPT',
-        'HTTP_CONNECTION', 'HTTP_HOST', 'HTTP_PRAGMA', 'HTTP_REFERER',
-        'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_ACCEPT_CHARSET',
-        'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
-        'HTTP_CACHE_CONTROL', 'PATH',
+        'AUTH_TYPE',
+        'AUTH_PASS',
+        'CONTENT_LENGTH',
+        'CONTENT_TYPE',
+        'DATE_GMT',
+        'DATE_LOCAL',
+        'DOCUMENT_NAME',
+        'DOCUMENT_ROOT',
+        'DOCUMENT_URI',
+        'GATEWAY_INTERFACE',
+        'LAST_MODIFIED',
+        'PATH_INFO',
+        'PATH_TRANSLATED',
+        'QUERY_STRING',
+        'REMOTE_ADDR',
+        'REMOTE_HOST',
+        'REMOTE_IDENT',
+        'REMOTE_USER',
+        'REQUEST_METHOD',
+        'SCRIPT_NAME',
+        'SERVER_NAME',
+        'SERVER_PORT',
+        'SERVER_PROTOCOL',
+        'SERVER_ROOT',
+        'SERVER_SOFTWARE',
+        'HTTP_ACCEPT',
+        'HTTP_CONNECTION',
+        'HTTP_HOST',
+        'HTTP_PRAGMA',
+        'HTTP_REFERER',
+        'HTTP_USER_AGENT',
+        'HTTP_COOKIE',
+        'HTTP_ACCEPT_CHARSET',
+        'HTTP_ACCEPT_ENCODING',
+        'HTTP_ACCEPT_LANGUAGE',
+        'HTTP_CACHE_CONTROL',
+        'PATH',
     ):
         value = environ.get(var)
         if value is None:
             value = 'None'
         html.append(
-            '<li>{}: <strong>{}</strong></li>'.format(var, escape(value)))
+            '<li>{}: <strong>{}</strong></li>'.format(var, escape(value))
+        )
     html.append('</ul>')
 
     html.append('<h2>GET Data</h2><ul>')
@@ -752,8 +911,11 @@ def webauth_test(request=None, url=None):
         html.append('<li>None</li>')
     else:
         for key in args.keys():
-            html.append('<li>{}: <strong>{}</strong></li>'.format(
-                escape(key), escape(args.get(key))))
+            html.append(
+                '<li>{}: <strong>{}</strong></li>'.format(
+                    escape(key), escape(args.get(key))
+                )
+            )
     html.append('</ul>')
 
     html.append('<h2>POST Data</h2><ul>')
@@ -761,8 +923,11 @@ def webauth_test(request=None, url=None):
         html.append('<li>None</li>')
     else:
         for key in form.keys():
-            html.append('<li>{}: <strong>{}</strong></li>'.format(
-                escape(key), escape(form.get(key))))
+            html.append(
+                '<li>{}: <strong>{}</strong></li>'.format(
+                    escape(key), escape(form.get(key))
+                )
+            )
     html.append('</ul>')
 
     html.append('</body></html>')
@@ -774,23 +939,29 @@ def main():
     url = 'http://localhost:9000/' + os.path.split(__file__)[-1]
     if os.getenv('SERVER_NAME'):
         import cgitb
+
         cgitb.enable()
         print('Content-type: text/html\n\n')
         print(webauth_test(url=url))
     elif len(sys.argv) == 3:
         import doctest
+
         globs = {
             'TEST_USER': sys.argv[1],  # Enter a UCInetId for testing
             'TEST_PASSWORD': sys.argv[2],  # Enter a password for testing
         }
-        print(LdapPerson(globs['TEST_USER'],
-                         # uid=globs['TEST_USER'],
-                         # password=globs['TEST_PASSWORD']
-                         ))
+        print(
+            LdapPerson(
+                globs['TEST_USER'],
+                # uid=globs['TEST_USER'],
+                # password=globs['TEST_PASSWORD']
+            )
+        )
         doctest.testmod(verbose=False, extraglobs=globs)
     else:
         import webbrowser
         from http.server import HTTPServer, CGIHTTPRequestHandler
+
         CGIHTTPRequestHandler.cgi_directories = ['', '/']
         print('Serving CGI script at', url)
         webbrowser.open(url)
