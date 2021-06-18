@@ -19,16 +19,18 @@ services at the University of California, Irvine (UCI):
 
 :License: BSD 3-Clause
 
-:Version: 2021.6.6
+:Version: 2021.6.18
 
 Requirements
 ------------
 * `CPython >= 3.7 <https://www.python.org>`_
 * `Python-ldap 3.3 <https://www.python-ldap.org>`_
-* `Pywin32 300 <https://github.com/mhammond/pywin32>`_
+* `Pywin32 301 <https://github.com/mhammond/pywin32>`_
 
 Revisions
 ---------
+2021.6.18
+    Revert new WebAuth URLs (not working).
 2021.6.6
     Fix uciCampusID query format.
     Use new WebAuth URLs.
