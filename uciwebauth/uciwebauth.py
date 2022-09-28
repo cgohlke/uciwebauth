@@ -1,6 +1,6 @@
 # uciwebauth.py
 
-# Copyright (c) 2008-2021, Christoph Gohlke
+# Copyright (c) 2008-2022, Christoph Gohlke
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,48 +41,67 @@ services at the University of California, Irvine (UCI):
 3. ADSI (Active Directory Service Interfaces) enables managing user objects
    in a Microsoft AD.
 
-:Author:
-  `Christoph Gohlke <https://www.lfd.uci.edu/~gohlke/>`_
-
-:Organization:
-  Laboratory for Fluorescence Dynamics. University of California, Irvine
-
+:Author: `Christoph Gohlke <https://www.cgohlke.com>`_
 :License: BSD 3-Clause
-
-:Version: 2021.6.18
+:Version: 2022.9.28
 
 Requirements
 ------------
-* `CPython >= 3.7 <https://www.python.org>`_
-* `Python-ldap 3.3 <https://www.python-ldap.org>`_
-* `Pywin32 301 <https://github.com/mhammond/pywin32>`_
+
+This release has been tested with the following requirements and dependencies
+(other versions may work):
+
+- `CPython 3.8.10, 3.9.13, 3.10.7, 3.11.0rc2 <https://www.python.org>`_
+- `Python-ldap 3.4.2 <https://pypi.org/project/python-ldap/>`_
+- `Pywin32 304 <https://pypi.org/project/pywin32/>`_
 
 Revisions
 ---------
+
+2022.9.28
+
+- Update metadata.
+
 2021.6.18
-    Revert new WebAuth URLs (not working).
+
+- Revert new WebAuth URLs (not working).
+
 2021.6.6
-    Fix uciCampusID query format.
-    Use new WebAuth URLs.
-    Remove support for Python 3.6 (NEP 29).
+
+- Fix uciCampusID query format.
+- Use new WebAuth URLs.
+- Remove support for Python 3.6 (NEP 29).
+
 2020.1.1
-    Remove support for Python 3.5.
+
+- Remove support for Python 3.5.
+
 2019.1.4
-    Fix static code analysis.
+
+- Fix static code analysis.
+
 2018.9.28
-    Add option to authenticate with OIT LDAP service.
-    Use OIT instead of Campus LDAP service.
+
+- Add option to authenticate with OIT LDAP service.
+- Use OIT instead of Campus LDAP service.
+
 2018.8.30
-    Move uciwebauth.py module into uciwebauth package.
+
+- Move uciwebauth.py module into uciwebauth package.
+
 2018.5.25
-    Add Active Directory Service Interfaces for user accounts.
-    Remove support for Python 2.
-    Remove Django backend.
+
+- Add Active Directory Service Interfaces for user accounts.
+- Remove support for Python 2.
+- Remove Django backend.
+
 2008.x.x
-    Initial release.
+
+- Initial release.
 
 References
 ----------
+
 1. OIT WebAuth: A tool for validating UCInetIDs on the Web.
    https://www.oit.uci.edu/idm/webauth/
 2. UCI LDAP Directory Service. https://www.oit.uci.edu/idm/ldap/
@@ -91,9 +110,9 @@ References
 
 """
 
-__version__ = '2021.6.18'
+__version__ = '2022.9.28'
 
-__all__ = (
+__all__ = [
     'WebAuth',
     'WebAuthError',
     'WebAuthBackend',
@@ -101,7 +120,7 @@ __all__ = (
     'LdapPersonError',
     'AdsiUser',
     'AdsiUserError',
-)
+]
 
 
 import sys
@@ -581,7 +600,7 @@ class LdapPerson:
     def __str__(self):
         """Return string with information about person."""
         return '\n'.join(
-            '{}={}'.format(attr, getattr(self, attr))
+            f'{attr}={getattr(self, attr)}'
             for attr in self.ATTRS
             if getattr(self, attr)
         )
@@ -623,8 +642,8 @@ class AdsiUser:
             namespace server.
 
         """
-        import win32com  # noqa: delayed import
-        import win32com.adsi  # noqa: delayed import
+        import win32com
+        import win32com.adsi  # type: ignore
 
         self.user = ''
         adsi = win32com.client.Dispatch('ADsNameSpaces')
@@ -677,7 +696,7 @@ class AdsiUser:
     def __str__(self):
         """Return string with information about user."""
         return '\n'.join(
-            '{}: {}'.format(key, getattr(self.user, key))
+            f'{key}: {getattr(self.user, key)}'
             for key in (
                 'cn',
                 'samAccountName',
@@ -834,28 +853,26 @@ def webauth_test(request=None, url=None):
     html = [
         '<html><body>',
         '<h1>UCI WebAuth Test</h1>',
-        '<p><a href="{}">{}</a></p>'.format(auth.url, escape(auth.url)),
-        '<p>{}</p>'.format(auth),
+        f'<p><a href="{auth.url}">{escape(auth.url)}</a></p>',
+        f'<p>{auth}</p>',
         '<h2>WebAuth Messages</h2><ul>',
     ]
     if auth.messages:
         for msg in auth.messages:
-            html.append('<li>{}</li>'.format(escape(msg)))
+            html.append(f'<li>{escape(msg)}</li>')
     else:
         html.append('<li>None</li>')
     html.append('</ul>')
     html.append('<h2>WebAuth Record</h2><ul>')
     for item in str(auth.auth).splitlines():
         k, v = item.split('=', 1)
-        html.append('<li>{}: <strong>{}</strong></li>'.format(k, escape(v)))
+        html.append(f'<li>{k}: <strong>{escape(v)}</strong></li>')
     html.append('</ul>')
     html.append('<h2>LDAP Record</h2><ul>')
     if auth.ldap and auth.ldap.cn:
         for item in str(auth.ldap).splitlines():
             k, v = item.split('=', 1)
-            html.append(
-                '<li>{}: <strong>{}</strong></li>'.format(k, escape(v))
-            )
+            html.append(f'<li>{k}: <strong>{escape(v)}</strong></li>')
     else:
         html.append('<li>None</li>')
     html.append('</ul>')
@@ -903,9 +920,7 @@ def webauth_test(request=None, url=None):
         value = environ.get(var)
         if value is None:
             value = 'None'
-        html.append(
-            '<li>{}: <strong>{}</strong></li>'.format(var, escape(value))
-        )
+        html.append(f'<li>{var}: <strong>{escape(value)}</strong></li>')
     html.append('</ul>')
 
     html.append('<h2>GET Data</h2><ul>')
